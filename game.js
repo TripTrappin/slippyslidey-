@@ -44,6 +44,9 @@
         { a: Math.min(70, H * 0.13), f: 0.0130, p: Math.PI / 2 },
         { a: 4,                       f: 0.0500, p: 1.0 },
       ],
+      // Tall starter mound centered just behind the player. Gaussian so it
+      // decays smoothly into the regular sine pattern - by ~x=1500 it's gone.
+      starter: { x: -120, a: 240, s: 360 },
     };
   }
   resize();
@@ -51,11 +54,18 @@
   function terrainY(x) {
     let y = TERRAIN.base;
     for (const L of TERRAIN.layers) y -= L.a * Math.sin(x * L.f + L.p);
+    const S = TERRAIN.starter;
+    const sx = x - S.x;
+    y -= S.a * Math.exp(-(sx * sx) / (2 * S.s * S.s));
     return y;
   }
   function terrainSlope(x) {
     let s = 0;
     for (const L of TERRAIN.layers) s -= L.a * L.f * Math.cos(x * L.f + L.p);
+    // d/dx of  -A * exp(-(x-x0)^2 / (2 sigma^2))  =  A * (x-x0)/sigma^2 * exp(...)
+    const S = TERRAIN.starter;
+    const sx = x - S.x;
+    s += S.a * sx / (S.s * S.s) * Math.exp(-(sx * sx) / (2 * S.s * S.s));
     return s;
   }
   function terrainAngle(x) { return Math.atan(terrainSlope(x)); }
