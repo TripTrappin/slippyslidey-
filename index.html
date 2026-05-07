@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#0b2545" />
+<title>Slippy Slidey</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+  <div id="score">0 m</div>
+  <div id="momentum-wrap"><div id="momentum"></div></div>
+  <div id="judge"></div>
+</div>
+<div id="overlay" class="visible">
+  <h1>Slippy Slidey</h1>
+  <p>Tap when the slider crosses a <b>gate</b>.<br/>Hit the green sweet spot for a <b>PERFECT</b> slide and keep your momentum up.</p>
+  <button id="start">Start</button>
+  <p class="tip">Swipe / drag left and right to steer.</p>
+</div>
+<script src="game.js"></script>
+</body>
+</html>
