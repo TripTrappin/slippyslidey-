@@ -329,12 +329,45 @@
     overlay.classList.add('visible');
   }
 
+  // ---------- Sky / altitude ----------
+  // Tile of stars that wraps in both axes and scrolls with parallax.
+  const STAR_TILE = 600;
+  const stars = [];
+  (function initStars() {
+    for (let i = 0; i < 70; i++) {
+      stars.push({
+        x: Math.random() * STAR_TILE,
+        y: Math.random() * STAR_TILE,
+        size: 0.6 + Math.random() * 1.6,
+        bright: 0.4 + Math.random() * 0.6,
+        twink: Math.random() * Math.PI * 2,
+      });
+    }
+  })();
+
+  // 0 at ground level, 1 once the camera is well above the slope (~"space").
+  function altitudeFactor() {
+    const camAlt = Math.max(0, TERRAIN.base - H * 0.5 - state.cameraY);
+    return Math.min(1, camAlt / 1500);
+  }
+
+  function lerpRgb(a, b, t) {
+    return [
+      Math.round(a[0] + (b[0] - a[0]) * t),
+      Math.round(a[1] + (b[1] - a[1]) * t),
+      Math.round(a[2] + (b[2] - a[2]) * t),
+    ];
+  }
+  function rgbCss(c) { return `rgb(${c[0]},${c[1]},${c[2]})`; }
+
   // ---------- Render ----------
   function render(dt) {
     ctx.clearRect(0, 0, W, H);
-    drawSky();
-    drawParallax(0.20, '#bcdcff', 180, 0.0026, 0.7);
-    drawParallax(0.45, '#9bc6ee', 120, 0.0035, 1.4);
+    const altT = altitudeFactor();
+    drawSky(altT);
+    if (altT > 0.10) drawStars(altT);
+    drawParallax(0.20, [188, 220, 255], 180, 0.0026, 0.7, altT);
+    drawParallax(0.45, [155, 198, 238], 120, 0.0035, 1.4, altT);
     drawTerrain();
     drawTrail();
     drawPlayer();
@@ -342,18 +375,45 @@
     drawDiveHint();
   }
 
-  function drawSky() {
+  function drawSky(t) {
+    const lowTop  = [207, 233, 255];
+    const lowBot  = [127, 182, 230];
+    const highTop = [6, 8, 22];
+    const highBot = [38, 52, 100];
+    const top = lerpRgb(lowTop, highTop, t);
+    const bot = lerpRgb(lowBot, highBot, t);
     const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, '#cfe9ff');
-    g.addColorStop(1, '#7fb6e6');
+    g.addColorStop(0, rgbCss(top));
+    g.addColorStop(1, rgbCss(bot));
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
   }
 
-  function drawParallax(scrollFactor, color, amplitude, freq, phase) {
+  function drawStars(t) {
+    const offX = ((state.cameraX * 0.04) % STAR_TILE + STAR_TILE) % STAR_TILE;
+    const offY = ((state.cameraY * 0.06) % STAR_TILE + STAR_TILE) % STAR_TILE;
+    ctx.fillStyle = '#ffffff';
+    for (let dx = -STAR_TILE; dx <= W + STAR_TILE; dx += STAR_TILE) {
+      for (let dy = -STAR_TILE; dy <= H + STAR_TILE; dy += STAR_TILE) {
+        for (const s of stars) {
+          const sx = s.x + dx - offX;
+          const sy = s.y + dy - offY;
+          if (sx < -2 || sx > W + 2 || sy < -2 || sy > H + 2) continue;
+          const tw = 0.75 + 0.25 * Math.sin(state.t * 2 + s.twink);
+          ctx.globalAlpha = Math.min(1, t * s.bright * tw);
+          ctx.fillRect(sx, sy, s.size, s.size);
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawParallax(scrollFactor, baseColor, amplitude, freq, phase, altT) {
     const camX = state.cameraX * scrollFactor;
     const horizon = TERRAIN.base - amplitude * 0.2 - state.cameraY * 0.15;
-    ctx.fillStyle = color;
+    // Fade parallax mountains toward the night-sky color as we ascend.
+    const c = lerpRgb(baseColor, [30, 44, 88], Math.min(1, altT * 1.1));
+    ctx.fillStyle = rgbCss(c);
     ctx.beginPath();
     ctx.moveTo(-10, H + 20);
     for (let sx = -10; sx <= W + 10; sx += 6) {
