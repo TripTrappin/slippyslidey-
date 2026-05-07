@@ -34,11 +34,15 @@
     // Primary controls jump rhythm. a*f^2 governs curvature at the peak,
     // which sets the minimum vx required to launch: v_min = sqrt(G / (a*f^2)).
     // Tuned so a player who just made it over one peak still launches off the next.
+    // Tuned so that at typical post-launch speeds, the ballistic trajectory
+    // lands the slider on the descending face of the *same* hill (chainable),
+    // not on the upslope of the next one. v_min = sqrt(g/(a*f^2)) for the
+    // primary; we want SPEED_BASE around 1.1..1.4 * v_min.
     TERRAIN = {
       base: H * 0.60,
       layers: [
-        { a: Math.min(85, H * 0.16), f: 0.0110, p: Math.PI / 2 },
-        { a: 6,                       f: 0.0300, p: 1.0 },
+        { a: Math.min(70, H * 0.13), f: 0.0130, p: Math.PI / 2 },
+        { a: 4,                       f: 0.0500, p: 1.0 },
       ],
     };
   }
@@ -59,13 +63,13 @@
   // ---------- Constants ----------
   const G = 1400;          // px/s^2 baseline gravity
   const G_DIVE = 3200;     // when tap held mid-air
-  const G_FLOAT = 900;     // when tap released mid-air (slight float, makes dive feel meaningful)
+  const G_FLOAT = 750;     // when tap released mid-air; lower = longer arcs, more dive leverage
   const FRICTION = 0.015;  // ground friction (per second, multiplicative)
   const SPEED_MIN = 90;
   const SPEED_BASE = 440;
   const SPEED_MAX = 1200;
-  const PERFECT_DEG = 9;
-  const GOOD_DEG = 22;
+  const PERFECT_DEG = 14;
+  const GOOD_DEG = 30;
   const PIXELS_PER_METER = 28;
 
   // ---------- State ----------
