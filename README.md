@@ -1,6 +1,6 @@
 # Slippy Slidey
 
-A mobile-first endless sliding game prototype. Hit perfect-timed taps as you cross gates to keep your momentum up — let it drop and you wipe out.
+A mobile-first endless sliding game prototype. Side-view: roll down hills, launch off the peaks, and tap-and-hold in the air to dive. Land tangent to the next downslope for a `PERFECT` and carry your momentum forward.
 
 ## Run it
 
@@ -14,8 +14,9 @@ python3 -m http.server 8000
 
 ## Controls
 
-- **Drag** left/right to steer the slider.
-- **Tap** when crossing a gate. Tapping in the green band = `PERFECT`, yellow = `GOOD`, miss = momentum loss.
+- **Tap and hold** mid-air to dive (extra gravity); release to float (low gravity).
+- Landing on a slope whose angle matches your flight angle = `PERFECT` (boost). Off-axis landings shed speed proportional to the mismatch.
+- Spacebar / ArrowDown also dives (desktop testing).
 
 ## Files
 
