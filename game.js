@@ -37,8 +37,8 @@
     TERRAIN = {
       base: H * 0.60,
       layers: [
-        { a: Math.min(120, H * 0.20), f: 0.0120, p: Math.PI / 2 },
-        { a: 8,                        f: 0.0300, p: 1.0 },
+        { a: Math.min(85, H * 0.16), f: 0.0110, p: Math.PI / 2 },
+        { a: 6,                       f: 0.0300, p: 1.0 },
       ],
     };
   }
@@ -163,6 +163,20 @@
     // Gentle global momentum decay so a stalled player will eventually fail.
     state.momentum = Math.max(0, state.momentum - 0.025 * dt);
 
+    // Out of momentum: the slider brakes hard and coasts to a stop.
+    // Once stopped, game over fires.
+    if (state.momentum <= 0) {
+      const brake = Math.max(0, 1 - 2.2 * dt);
+      state.speed *= brake;
+      if (!state.grounded) {
+        state.vx *= brake;
+        // Stop pulling sideways in the air; gravity still acts.
+      } else {
+        state.vx *= brake;
+        state.vy *= brake;
+      }
+    }
+
     // Camera trails the player.
     const targetCamX = state.x - W * 0.32;
     const targetCamY = state.y - H * 0.55;
@@ -195,8 +209,8 @@
     scoreEl.textContent = Math.floor(state.distance) + ' m';
     momentumEl.style.width = (state.momentum * 100).toFixed(0) + '%';
 
-    // Game over: stalled out.
-    if (state.grounded && state.speed < 60 && state.momentum <= 0.001) gameOver();
+    // Game over: out of momentum and coasted to a stop on the snow.
+    if (state.grounded && state.momentum <= 0 && state.speed < 30) gameOver();
   }
 
   function updateGrounded(dt) {
@@ -205,8 +219,9 @@
     state.speed += G * Math.sin(angle) * dt;
     // Friction.
     state.speed *= (1 - FRICTION * dt);
-    // Min/max clamps.
-    if (state.speed < SPEED_MIN) state.speed = SPEED_MIN;
+    // Floor speed only while we still have momentum — once it's gone we want
+    // the slider to actually grind to a halt.
+    if (state.momentum > 0 && state.speed < SPEED_MIN) state.speed = SPEED_MIN;
     if (state.speed > SPEED_MAX) state.speed = SPEED_MAX;
 
     // Step forward along the surface.
