@@ -79,7 +79,7 @@
     tapHeld: false,
     momentum: 0.6,
     distance: 0,
-    cameraX: 0, cameraY: 0,
+    cameraX: 0, cameraY: 0, cameraScale: 1,
     sparkles: [],
     trail: [],
     bestStreak: 0, streak: 0,
@@ -103,7 +103,7 @@
     state.momentum = 0.7;
     state.distance = 0;
     state.streak = 0;
-    state.cameraX = 0; state.cameraY = 0;
+    state.cameraX = 0; state.cameraY = 0; state.cameraScale = 1;
     state.sparkles.length = 0;
     state.trail.length = 0;
     state.lastLaunch = null;
@@ -177,13 +177,21 @@
       }
     }
 
-    // Camera trails the player.
+    // Camera: trail the player, zoom out when airborne so the next jumps
+    // are visible below for landing alignment, and lift the player up the
+    // screen the higher they are so ground is in view.
+    const playerAlt = Math.max(0, terrainY(state.x) - state.y);
+    const altRatio = Math.min(1, playerAlt / 700);
+    const yRatio = 0.55 - 0.22 * altRatio;       // 0.55 grounded → 0.33 high
+    const targetScale = state.grounded
+      ? 1.0
+      : Math.max(0.6, 1.0 - playerAlt / 1300);
     const targetCamX = state.x - W * 0.32;
-    const targetCamY = state.y - H * 0.55;
+    const targetCamY = state.y - H * yRatio;
     const k = 6;
-    state.cameraX += (targetCamX - state.cameraX) * Math.min(1, k * dt);
-    state.cameraY += (targetCamY - state.cameraY) * Math.min(1, k * dt);
-    // Don't let the camera show too much sky when on flat terrain
+    state.cameraX  += (targetCamX  - state.cameraX)  * Math.min(1, k * dt);
+    state.cameraY  += (targetCamY  - state.cameraY)  * Math.min(1, k * dt);
+    state.cameraScale += (targetScale - state.cameraScale) * Math.min(1, 4 * dt);
     state.cameraY = Math.min(state.cameraY, terrainY(state.x) - H * 0.45);
 
     state.distance = Math.max(state.distance, state.x / PIXELS_PER_METER);
@@ -376,17 +384,44 @@
   function rgbCss(c) { return `rgb(${c[0]},${c[1]},${c[2]})`; }
 
   // ---------- Render ----------
+  // World x/y range visible after the zoom transform is applied. Used so
+  // that procedural drawing (terrain, parallax) extends past the screen
+  // edges when zoomed out.
+  function viewBounds() {
+    const s = state.cameraScale;
+    const px = state.x - state.cameraX;
+    const py = state.y - state.cameraY;
+    return {
+      px, py, s,
+      left:   state.cameraX + (0 - px) / s + px,
+      right:  state.cameraX + (W - px) / s + px,
+      top:    state.cameraY + (0 - py) / s + py,
+      bottom: state.cameraY + (H - py) / s + py,
+    };
+  }
+
   function render(dt) {
     ctx.clearRect(0, 0, W, H);
     const altT = altitudeFactor();
     drawSky(altT);
     if (altT > 0.10) drawStars(altT);
-    drawParallax(0.20, [188, 220, 255], 180, 0.0026, 0.7, altT);
-    drawParallax(0.45, [155, 198, 238], 120, 0.0035, 1.4, altT);
-    drawTerrain();
-    drawTrail();
-    drawPlayer();
+
+    // World-space layers go through the zoom transform.
+    const v = viewBounds();
+    ctx.save();
+    ctx.translate(v.px, v.py);
+    ctx.scale(v.s, v.s);
+    ctx.translate(-v.px, -v.py);
+
+    drawParallax(0.20, [188, 220, 255], 180, 0.0026, 0.7, altT, v);
+    drawParallax(0.45, [155, 198, 238], 120, 0.0035, 1.4, altT, v);
+    drawTerrain(v);
+    drawTrail(v);
     drawSparkles();
+    ctx.restore();
+
+    // Player and dive hint stay screen-sized regardless of zoom.
+    drawPlayer();
     drawDiveHint();
   }
 
@@ -423,29 +458,33 @@
     ctx.globalAlpha = 1;
   }
 
-  function drawParallax(scrollFactor, baseColor, amplitude, freq, phase, altT) {
+  function drawParallax(scrollFactor, baseColor, amplitude, freq, phase, altT, v) {
     const camX = state.cameraX * scrollFactor;
     const horizon = TERRAIN.base - amplitude * 0.2 - state.cameraY * 0.15;
-    // Fade parallax mountains toward the night-sky color as we ascend.
     const c = lerpRgb(baseColor, [30, 44, 88], Math.min(1, altT * 1.1));
     ctx.fillStyle = rgbCss(c);
+    // Iterate in scale-1 screen X across the actually-visible world range.
+    const leftSx = v.left - state.cameraX - 10;
+    const rightSx = v.right - state.cameraX + 10;
+    const bottomSy = v.bottom - state.cameraY + 200;
     ctx.beginPath();
-    ctx.moveTo(-10, H + 20);
-    for (let sx = -10; sx <= W + 10; sx += 6) {
+    ctx.moveTo(leftSx, bottomSy);
+    for (let sx = leftSx; sx <= rightSx; sx += 6) {
       const wx = sx + camX;
       const y = horizon - amplitude * (0.5 + 0.5 * Math.sin(wx * freq + phase));
       ctx.lineTo(sx, y);
     }
-    ctx.lineTo(W + 10, H + 20);
+    ctx.lineTo(rightSx, bottomSy);
     ctx.closePath();
     ctx.fill();
   }
 
-  function drawTerrain() {
-    const left = state.cameraX - 20;
-    const right = state.cameraX + W + 20;
+  function drawTerrain(v) {
+    const left  = v.left  - 20;
+    const right = v.right + 20;
+    const bottomSy = v.bottom - state.cameraY + 200;
     ctx.beginPath();
-    ctx.moveTo(-20 + 0, H + 40);
+    ctx.moveTo(left - state.cameraX, bottomSy);
     let first = true;
     for (let x = left; x <= right; x += 4) {
       const sx = x - state.cameraX;
@@ -453,17 +492,16 @@
       if (first) { ctx.lineTo(sx, sy); first = false; }
       else ctx.lineTo(sx, sy);
     }
-    ctx.lineTo(W + 20, H + 40);
+    ctx.lineTo(right - state.cameraX, bottomSy);
     ctx.closePath();
 
-    const g = ctx.createLinearGradient(0, terrainY(state.x) - state.cameraY - 60, 0, H);
+    const g = ctx.createLinearGradient(0, terrainY(state.x) - state.cameraY - 60, 0, bottomSy);
     g.addColorStop(0, '#ffffff');
     g.addColorStop(0.5, '#dceffd');
     g.addColorStop(1, '#7ba9d2');
     ctx.fillStyle = g;
     ctx.fill();
 
-    // Top crest line.
     ctx.beginPath();
     let started = false;
     for (let x = left; x <= right; x += 4) {
@@ -473,15 +511,15 @@
       else ctx.lineTo(sx, sy);
     }
     ctx.strokeStyle = 'rgba(11,37,69,.35)';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2 / v.s;
     ctx.stroke();
   }
 
-  function drawTrail() {
+  function drawTrail(v) {
     if (state.trail.length < 2) return;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3 / v.s;
     for (let i = 1; i < state.trail.length; i++) {
       const a = state.trail[i - 1], b = state.trail[i];
       const ax = a.x - state.cameraX, ay = a.y - state.cameraY;
