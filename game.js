@@ -217,7 +217,7 @@
     // Where would we be on a free ballistic step from here?
     const ballisticY = state.y + state.speed * Math.sin(angle) * dt + 0.5 * G * dt * dt;
 
-    if (newSurfaceY > ballisticY + 0.5) {
+    if (newSurfaceY > ballisticY) {
       // Surface fell away faster than gravity would carry us — launch!
       state.grounded = false;
       state.x = newX;
