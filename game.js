@@ -27,12 +27,18 @@
   // Sum of sines. y is canvas-y (positive = down). Peaks have small y.
   let TERRAIN;
   function rebuildTerrainConfig() {
+    // Two layers: a strong primary so peaks/troughs are at predictable
+    // intervals (rhythmic chaining), plus a tiny high-frequency wobble
+    // for visual texture only. Keep secondary's a*f small relative to
+    // the primary so it doesn't move where the peaks are.
+    // Primary controls jump rhythm. a*f^2 governs curvature at the peak,
+    // which sets the minimum vx required to launch: v_min = sqrt(G / (a*f^2)).
+    // Tuned so a player who just made it over one peak still launches off the next.
     TERRAIN = {
-      base: H * 0.62,
+      base: H * 0.60,
       layers: [
-        { a: Math.min(140, H * 0.20), f: 0.0050, p: Math.PI / 2 },
-        { a: Math.min(50,  H * 0.07), f: 0.0130, p: 1.7 },
-        { a: 14,                       f: 0.0290, p: 3.0 },
+        { a: Math.min(120, H * 0.20), f: 0.0120, p: Math.PI / 2 },
+        { a: 8,                        f: 0.0300, p: 1.0 },
       ],
     };
   }
@@ -54,10 +60,10 @@
   const G = 1400;          // px/s^2 baseline gravity
   const G_DIVE = 3200;     // when tap held mid-air
   const G_FLOAT = 900;     // when tap released mid-air (slight float, makes dive feel meaningful)
-  const FRICTION = 0.06;   // ground friction (per second, multiplicative)
+  const FRICTION = 0.015;  // ground friction (per second, multiplicative)
   const SPEED_MIN = 90;
-  const SPEED_BASE = 360;
-  const SPEED_MAX = 1100;
+  const SPEED_BASE = 440;
+  const SPEED_MAX = 1200;
   const PERFECT_DEG = 9;
   const GOOD_DEG = 22;
   const PIXELS_PER_METER = 28;
@@ -86,7 +92,7 @@
   function reset() {
     state.running = true; state.over = false;
     state.t = 0;
-    state.x = 200;
+    state.x = 60;
     state.y = terrainY(state.x);
     state.speed = SPEED_BASE;
     const a = terrainAngle(state.x);
@@ -94,7 +100,7 @@
     state.vy = state.speed * Math.sin(a);
     state.grounded = true;
     state.tapHeld = false;
-    state.momentum = 0.6;
+    state.momentum = 0.7;
     state.distance = 0;
     state.streak = 0;
     state.cameraX = 0; state.cameraY = 0;
@@ -155,7 +161,7 @@
     else updateAir(dt);
 
     // Gentle global momentum decay so a stalled player will eventually fail.
-    state.momentum = Math.max(0, state.momentum - 0.04 * dt);
+    state.momentum = Math.max(0, state.momentum - 0.025 * dt);
 
     // Camera trails the player.
     const targetCamX = state.x - W * 0.32;
@@ -249,7 +255,8 @@
       let judgement, retain;
       if (degDiff <= PERFECT_DEG) {
         judgement = 'perfect';
-        retain = 1.18;          // small boost: carry & build momentum
+        // Bigger boost when chaining: each consecutive perfect compounds.
+        retain = 1.22 + Math.min(0.18, state.streak * 0.03);
       } else if (degDiff <= GOOD_DEG) {
         judgement = 'good';
         retain = 1.00;          // exactly carry
