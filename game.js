@@ -191,16 +191,18 @@
       }
     }
 
-    // Camera: trail the player, zoom out when airborne so the next jumps
-    // are visible below for landing alignment, and lift the player up the
-    // screen the higher they are so ground is in view.
+    // Camera: trail the player, zoom out when airborne (and somewhat when
+    // moving fast on the ground) so the upcoming jumps are in view, and
+    // lift the player up the screen the higher they are.
     const playerAlt = Math.max(0, terrainY(state.x) - state.y);
-    const altRatio = Math.min(1, playerAlt / 700);
-    const yRatio = 0.55 - 0.22 * altRatio;       // 0.55 grounded → 0.33 high
+    const altRatio   = Math.min(1, playerAlt / 500);
+    const speedRatio = Math.max(0, Math.min(1, (state.speed - 500) / 700));
+    const yRatio = 0.55 - 0.24 * altRatio;       // 0.55 grounded → 0.31 high
+    const xRatio = 0.32 - 0.10 * Math.max(altRatio, speedRatio); // shift player left when zoomed
     const targetScale = state.grounded
-      ? 1.0
-      : Math.max(0.6, 1.0 - playerAlt / 1300);
-    const targetCamX = state.x - W * 0.32;
+      ? Math.max(0.70, 1.0 - 0.30 * speedRatio)
+      : Math.max(0.45, 1.0 - Math.max(altRatio, speedRatio));
+    const targetCamX = state.x - W * xRatio;
     const targetCamY = state.y - H * yRatio;
     const k = 6;
     state.cameraX  += (targetCamX  - state.cameraX)  * Math.min(1, k * dt);
