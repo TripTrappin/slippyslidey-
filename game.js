@@ -64,7 +64,6 @@
         fK: 0.000020,                 // px scale: wavelength doubles at x = 1/fK
         p: Math.PI / 2,
       },
-      texture: { a: 4, f: 0.0500, p: 1.0 },
       starter: { x: -120, a: 240, s: 360 },
     };
   }
@@ -93,8 +92,6 @@
   function terrainY(x) {
     let y = TERRAIN.base;
     y -= localAmp(x) * Math.sin(phaseAt(x));
-    const T = TERRAIN.texture;
-    y -= T.a * Math.sin(x * T.f + T.p);
     const S = TERRAIN.starter;
     const sx = x - S.x;
     y -= S.a * Math.exp(-(sx * sx) / (2 * S.s * S.s));
@@ -107,8 +104,6 @@
     const phi = phaseAt(x);
     const f   = localFreq(x);
     let s = -ad * Math.sin(phi) - a * f * Math.cos(phi);
-    const T = TERRAIN.texture;
-    s -= T.a * T.f * Math.cos(x * T.f + T.p);
     const S = TERRAIN.starter;
     const sx = x - S.x;
     s += S.a * sx / (S.s * S.s) * Math.exp(-(sx * sx) / (2 * S.s * S.s));
