@@ -16,11 +16,20 @@
   <div id="momentum-wrap"><div id="momentum"></div></div>
   <div id="judge"></div>
 </div>
+<div id="biome-banner"></div>
 <div id="overlay" class="visible">
   <h1>Slippy Slidey</h1>
-  <p>Roll down hills, launch off the peaks. <b>Tap and hold</b> in the air to dive — land flat against the next slope for a <b>PERFECT</b> and carry your momentum into the next jump.</p>
+  <p id="overlay-msg">Roll down hills, launch off the peaks. <b>Tap and hold</b> in the air to dive — land flat against the next slope for a <b>PERFECT</b> and carry your momentum into the next jump.</p>
+  <div id="name-entry" hidden>
+    <input id="name-input" maxlength="16" placeholder="Your name" autocomplete="off" />
+    <button id="submit-score">Submit</button>
+  </div>
   <button id="start">Start</button>
   <p class="tip">Tap = dive. Release = float.</p>
+  <div id="leaderboard">
+    <h2>Top Slides</h2>
+    <ol id="leaderboard-list"><li class="empty">Loading…</li></ol>
+  </div>
 </div>
 <script src="game.js"></script>
 </body>

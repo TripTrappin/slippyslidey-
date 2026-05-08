@@ -1,11 +1,22 @@
 (() => {
+  // After deploying worker/leaderboard.js, paste the URL printed by
+  // `wrangler deploy` here. Leave empty for a localStorage-only fallback.
+  const LEADERBOARD_URL = '';
+  const TOP_N = 10;
+
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const scoreEl = document.getElementById('score');
   const momentumEl = document.getElementById('momentum');
   const judgeEl = document.getElementById('judge');
   const overlay = document.getElementById('overlay');
+  const overlayH1 = overlay.querySelector('h1');
+  const overlayMsg = document.getElementById('overlay-msg');
   const startBtn = document.getElementById('start');
+  const nameEntry = document.getElementById('name-entry');
+  const nameInput = document.getElementById('name-input');
+  const submitBtn = document.getElementById('submit-score');
+  const leaderboardList = document.getElementById('leaderboard-list');
 
   let DPR = Math.min(window.devicePixelRatio || 1, 2);
   let W = 0, H = 0;
@@ -154,6 +165,8 @@
 
   startBtn.addEventListener('click', () => {
     overlay.classList.remove('visible');
+    leaderboardCtl.onStart();
+    biomeBanner.reset();
     reset();
   });
 
@@ -361,11 +374,18 @@
     if (state.over) return;
     state.over = true;
     state.running = false;
-    overlay.querySelector('h1').textContent = 'Wiped Out!';
-    overlay.querySelector('p').innerHTML =
-      `Distance: <b>${Math.floor(state.distance)} m</b><br/>Best perfect streak: <b>${state.bestStreak}</b>`;
-    overlay.querySelector('button').textContent = 'Slide Again';
+    const distance = Math.floor(state.distance);
+    const personalBest = Math.max(distance, leaderboardCtl.getPersonalBest());
+    leaderboardCtl.setPersonalBest(personalBest);
+    overlayH1.textContent = 'Wiped Out!';
+    const newBest = distance >= personalBest && distance > 0;
+    overlayMsg.innerHTML =
+      `Distance: <b>${distance} m</b>${newBest ? ' &nbsp;<span style="color:#06d6a0">NEW BEST</span>' : ''}` +
+      `<br/>Best perfect streak: <b>${state.bestStreak}</b>` +
+      `<br/>Personal best: <b>${personalBest} m</b>`;
+    startBtn.textContent = 'Slide Again';
     overlay.classList.add('visible');
+    leaderboardCtl.onGameOver(distance);
   }
 
   // ---------- Sky / altitude ----------
@@ -399,6 +419,87 @@
   }
   function rgbCss(c) { return `rgb(${c[0]},${c[1]},${c[2]})`; }
 
+  // ---------- Biomes ----------
+  // Every BIOME_LENGTH metres the world swaps to the next biome. The last
+  // BIOME_BLEND fraction of each chunk lerps colors toward the next biome
+  // so the seam isn't a hard cut.
+  const BIOME_LENGTH = 500;
+  const BIOME_BLEND = 0.15;  // last 15% of each chunk transitions
+
+  const BIOMES = [
+    { name: 'POWDER PEAKS',
+      skyTop: [207, 233, 255], skyBot: [127, 182, 230],
+      parallax1: [188, 220, 255], parallax2: [155, 198, 238],
+      terrainTop: [255, 255, 255], terrainMid: [220, 239, 253], terrainBot: [123, 169, 210],
+      crest: 'rgba(11,37,69,.35)' },
+    { name: 'GOLDEN DUNES',
+      skyTop: [255, 222, 178], skyBot: [248, 158, 110],
+      parallax1: [223, 173, 122], parallax2: [180, 122, 90],
+      terrainTop: [255, 226, 168], terrainMid: [228, 168, 102], terrainBot: [134, 80, 48],
+      crest: 'rgba(60,30,10,.45)' },
+    { name: 'EMERALD VALLEY',
+      skyTop: [200, 235, 230], skyBot: [120, 196, 168],
+      parallax1: [110, 165, 110], parallax2: [70, 124, 80],
+      terrainTop: [225, 240, 200], terrainMid: [150, 200, 130], terrainBot: [56, 104, 70],
+      crest: 'rgba(20,50,28,.4)' },
+    { name: 'TWILIGHT TUNDRA',
+      skyTop: [80, 50, 130], skyBot: [196, 92, 148],
+      parallax1: [80, 60, 130], parallax2: [54, 38, 96],
+      terrainTop: [212, 188, 235], terrainMid: [136, 110, 184], terrainBot: [56, 36, 96],
+      crest: 'rgba(220,200,255,.35)' },
+  ];
+
+  function biomeIndexAt(d) { return Math.floor(Math.max(0, d) / BIOME_LENGTH); }
+
+  function activeBiome() {
+    const d = Math.max(0, state.distance);
+    const idx = biomeIndexAt(d);
+    const inChunk = (d % BIOME_LENGTH) / BIOME_LENGTH;
+    const blend = inChunk > (1 - BIOME_BLEND)
+      ? (inChunk - (1 - BIOME_BLEND)) / BIOME_BLEND
+      : 0;
+    return {
+      idx,
+      cur: BIOMES[idx % BIOMES.length],
+      next: BIOMES[(idx + 1) % BIOMES.length],
+      blend,
+    };
+  }
+
+  function biomeColors() {
+    const b = activeBiome();
+    const L = (k) => lerpRgb(b.cur[k], b.next[k], b.blend);
+    return {
+      skyTop: L('skyTop'), skyBot: L('skyBot'),
+      parallax1: L('parallax1'), parallax2: L('parallax2'),
+      terrainTop: L('terrainTop'), terrainMid: L('terrainMid'), terrainBot: L('terrainBot'),
+      crest: b.cur.crest,
+      name: b.cur.name,
+      idx: b.idx,
+    };
+  }
+
+  // Banner that flashes the biome name whenever the player crosses into one.
+  const biomeBanner = (() => {
+    const el = document.getElementById('biome-banner');
+    let lastIdx = -1;
+    let hideAt = 0;
+    return {
+      reset() { lastIdx = -1; hideAt = 0; el.classList.remove('show'); el.textContent = ''; },
+      update(bc) {
+        if (bc.idx !== lastIdx && state.running) {
+          lastIdx = bc.idx;
+          el.textContent = bc.name;
+          el.classList.add('show');
+          hideAt = state.t + 2.4;
+        } else if (state.t > hideAt && hideAt > 0) {
+          el.classList.remove('show');
+          hideAt = 0;
+        }
+      },
+    };
+  })();
+
   // ---------- Render ----------
   // World x/y range visible after the zoom transform is applied. Used so
   // that procedural drawing (terrain, parallax) extends past the screen
@@ -419,7 +520,8 @@
   function render(dt) {
     ctx.clearRect(0, 0, W, H);
     const altT = altitudeFactor();
-    drawSky(altT);
+    const bc = biomeColors();
+    drawSky(altT, bc);
     if (altT > 0.10) drawStars(altT);
 
     // World-space layers go through the zoom transform.
@@ -429,9 +531,9 @@
     ctx.scale(v.s, v.s);
     ctx.translate(-v.px, -v.py);
 
-    drawParallax(0.20, [188, 220, 255], 180, 0.0026, 0.7, altT, v);
-    drawParallax(0.45, [155, 198, 238], 120, 0.0035, 1.4, altT, v);
-    drawTerrain(v);
+    drawParallax(0.20, bc.parallax1, 180, 0.0026, 0.7, altT, v);
+    drawParallax(0.45, bc.parallax2, 120, 0.0035, 1.4, altT, v);
+    drawTerrain(v, bc);
     drawTrail(v);
     drawSparkles();
     ctx.restore();
@@ -439,15 +541,14 @@
     // Player and dive hint stay screen-sized regardless of zoom.
     drawPlayer();
     drawDiveHint();
+    biomeBanner.update(bc);
   }
 
-  function drawSky(t) {
-    const lowTop  = [207, 233, 255];
-    const lowBot  = [127, 182, 230];
+  function drawSky(t, bc) {
     const highTop = [6, 8, 22];
     const highBot = [38, 52, 100];
-    const top = lerpRgb(lowTop, highTop, t);
-    const bot = lerpRgb(lowBot, highBot, t);
+    const top = lerpRgb(bc.skyTop, highTop, t);
+    const bot = lerpRgb(bc.skyBot, highBot, t);
     const g = ctx.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, rgbCss(top));
     g.addColorStop(1, rgbCss(bot));
@@ -495,7 +596,7 @@
     ctx.fill();
   }
 
-  function drawTerrain(v) {
+  function drawTerrain(v, bc) {
     const left  = v.left  - 20;
     const right = v.right + 20;
     const bottomSy = v.bottom - state.cameraY + 200;
@@ -512,9 +613,9 @@
     ctx.closePath();
 
     const g = ctx.createLinearGradient(0, terrainY(state.x) - state.cameraY - 60, 0, bottomSy);
-    g.addColorStop(0, '#ffffff');
-    g.addColorStop(0.5, '#dceffd');
-    g.addColorStop(1, '#7ba9d2');
+    g.addColorStop(0,   rgbCss(bc.terrainTop));
+    g.addColorStop(0.5, rgbCss(bc.terrainMid));
+    g.addColorStop(1,   rgbCss(bc.terrainBot));
     ctx.fillStyle = g;
     ctx.fill();
 
@@ -526,7 +627,7 @@
       if (!started) { ctx.moveTo(sx, sy); started = true; }
       else ctx.lineTo(sx, sy);
     }
-    ctx.strokeStyle = 'rgba(11,37,69,.35)';
+    ctx.strokeStyle = bc.crest;
     ctx.lineWidth = 2 / v.s;
     ctx.stroke();
   }
@@ -627,6 +728,108 @@
     ctx.arcTo(x, y, x + w, y, r);
     ctx.closePath();
   }
+
+  // ---------- Leaderboard ----------
+  const leaderboardCtl = (() => {
+    const KEY_BEST = 'slippy_best';
+    const KEY_NAME = 'slippy_name';
+    let scores = [];
+    let lastDistance = 0;
+
+    const escapeHtml = (s) => String(s).replace(/[&<>"']/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    function getPersonalBest() {
+      return parseInt(localStorage.getItem(KEY_BEST) || '0', 10) || 0;
+    }
+    function setPersonalBest(d) {
+      if (d > getPersonalBest()) localStorage.setItem(KEY_BEST, String(d));
+    }
+    function getName() { return localStorage.getItem(KEY_NAME) || ''; }
+    function setName(n) { localStorage.setItem(KEY_NAME, n); }
+
+    function render() {
+      leaderboardList.innerHTML = '';
+      if (!scores.length) {
+        const msg = LEADERBOARD_URL ? 'No scores yet — be the first.'
+          : 'Set up worker/leaderboard.js for a global board.';
+        leaderboardList.innerHTML = `<li class="empty">${msg}</li>`;
+        return;
+      }
+      const myName = getName();
+      scores.slice(0, TOP_N).forEach((s, i) => {
+        const li = document.createElement('li');
+        if (myName && s.name === myName) li.className = 'you';
+        li.innerHTML = `<span class="rank">${i + 1}.</span>` +
+          `<span class="name">${escapeHtml(s.name)}</span>` +
+          `<span class="score">${s.score} m</span>`;
+        leaderboardList.appendChild(li);
+      });
+    }
+
+    async function fetchScores() {
+      if (!LEADERBOARD_URL) { render(); return; }
+      try {
+        const res = await fetch(`${LEADERBOARD_URL}/scores`);
+        if (!res.ok) throw new Error('http');
+        const data = await res.json();
+        scores = Array.isArray(data.scores) ? data.scores : [];
+      } catch { /* leave previous cache */ }
+      render();
+    }
+
+    async function submit(name, score) {
+      if (!LEADERBOARD_URL) {
+        scores.push({ name, score, t: Date.now() });
+        scores.sort((a, b) => b.score - a.score);
+        scores = scores.slice(0, 50);
+        render();
+        return { ok: true, local: true };
+      }
+      try {
+        const res = await fetch(`${LEADERBOARD_URL}/score`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, score }),
+        });
+        const data = await res.json();
+        if (Array.isArray(data.scores)) { scores = data.scores; render(); }
+        return data;
+      } catch {
+        return { error: 'network' };
+      }
+    }
+
+    function onGameOver(distance) {
+      lastDistance = distance;
+      const min = scores.length >= TOP_N ? scores[TOP_N - 1].score : 0;
+      const qualifies = distance > 0 && distance > min;
+      nameEntry.hidden = !qualifies;
+      if (qualifies) nameInput.value = getName();
+      submitBtn.textContent = 'Submit';
+      submitBtn.disabled = false;
+    }
+    function onStart() { nameEntry.hidden = true; }
+
+    submitBtn.addEventListener('click', async () => {
+      const name = nameInput.value.trim();
+      if (!name) { nameInput.focus(); return; }
+      setName(name);
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Sending…';
+      const result = await submit(name, lastDistance);
+      submitBtn.disabled = false;
+      if (result && !result.error) {
+        nameEntry.hidden = true;
+        submitBtn.textContent = 'Submitted';
+      } else {
+        submitBtn.textContent = 'Try again';
+      }
+    });
+
+    fetchScores();
+    return { getPersonalBest, setPersonalBest, onGameOver, onStart };
+  })();
 
   requestAnimationFrame(frame);
 })();
