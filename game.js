@@ -49,31 +49,66 @@
     // lands the slider on the descending face of the *same* hill (chainable),
     // not on the upslope of the next one. v_min = sqrt(g/(a*f^2)) for the
     // primary; we want SPEED_BASE around 1.1..1.4 * v_min.
+    // Primary terrain scales with distance: amplitude grows toward aMax
+    // while frequency decays from f0 toward 0 (wavelength grows). The
+    // sine uses an integrated phase so it stays continuous even though
+    // the local frequency changes. Curvature a*f^2 at peaks stays in a
+    // similar range, so launches keep working as the player goes far.
     TERRAIN = {
       base: H * 0.60,
-      layers: [
-        { a: Math.min(70, H * 0.13), f: 0.0130, p: Math.PI / 2 },
-        { a: 4,                       f: 0.0500, p: 1.0 },
-      ],
-      // Tall starter mound centered just behind the player. Gaussian so it
-      // decays smoothly into the regular sine pattern - by ~x=1500 it's gone.
+      primary: {
+        a0: 70,
+        aMax: Math.min(180, H * 0.30),
+        aGrow: 25000,                 // px scale: A reaches ~63% of aMax over this distance
+        f0: 0.0130,
+        fK: 0.000020,                 // px scale: wavelength doubles at x = 1/fK
+        p: Math.PI / 2,
+      },
+      texture: { a: 4, f: 0.0500, p: 1.0 },
       starter: { x: -120, a: 240, s: 360 },
     };
   }
   resize();
 
+  function localAmp(x) {
+    if (x <= 0) return TERRAIN.primary.a0;
+    const { a0, aMax, aGrow } = TERRAIN.primary;
+    return a0 + (aMax - a0) * (1 - Math.exp(-x / aGrow));
+  }
+  function localAmpDeriv(x) {
+    if (x <= 0) return 0;
+    const { a0, aMax, aGrow } = TERRAIN.primary;
+    return (aMax - a0) * Math.exp(-x / aGrow) / aGrow;
+  }
+  function localFreq(x) {
+    const { f0, fK } = TERRAIN.primary;
+    return f0 / (1 + fK * Math.max(0, x));
+  }
+  function phaseAt(x) {
+    const { f0, fK, p } = TERRAIN.primary;
+    if (x <= 0) return f0 * x + p;
+    return (f0 / fK) * Math.log(1 + fK * x) + p;
+  }
+
   function terrainY(x) {
     let y = TERRAIN.base;
-    for (const L of TERRAIN.layers) y -= L.a * Math.sin(x * L.f + L.p);
+    y -= localAmp(x) * Math.sin(phaseAt(x));
+    const T = TERRAIN.texture;
+    y -= T.a * Math.sin(x * T.f + T.p);
     const S = TERRAIN.starter;
     const sx = x - S.x;
     y -= S.a * Math.exp(-(sx * sx) / (2 * S.s * S.s));
     return y;
   }
   function terrainSlope(x) {
-    let s = 0;
-    for (const L of TERRAIN.layers) s -= L.a * L.f * Math.cos(x * L.f + L.p);
-    // d/dx of  -A * exp(-(x-x0)^2 / (2 sigma^2))  =  A * (x-x0)/sigma^2 * exp(...)
+    // d/dx [-A(x) sin(phi(x))] = -A'(x) sin(phi) - A(x) phi'(x) cos(phi)
+    const a   = localAmp(x);
+    const ad  = localAmpDeriv(x);
+    const phi = phaseAt(x);
+    const f   = localFreq(x);
+    let s = -ad * Math.sin(phi) - a * f * Math.cos(phi);
+    const T = TERRAIN.texture;
+    s -= T.a * T.f * Math.cos(x * T.f + T.p);
     const S = TERRAIN.starter;
     const sx = x - S.x;
     s += S.a * sx / (S.s * S.s) * Math.exp(-(sx * sx) / (2 * S.s * S.s));
@@ -341,6 +376,15 @@
       state.bestStreak = Math.max(state.bestStreak, state.streak);
       state.lastLanding = { x: state.x, y: state.y, judgement, t: state.t };
       showJudge(judgement.toUpperCase(), judgement);
+
+      // Every 5th consecutive perfect rockets the slider into space.
+      if (judgement === 'perfect' && state.streak > 0 && state.streak % 5 === 0) {
+        state.vy = -1500;
+        state.grounded = false;
+        burst(state.x, state.y, '#9bf6ff', 60);
+        burst(state.x, state.y, '#ffffff', 30);
+        showJudge('TO SPACE!', 'perfect');
+      }
     }
   }
 
@@ -403,6 +447,19 @@
       });
     }
   })();
+
+  // Planets are tiled like stars but rarer, larger, and parallax slower.
+  // Hand-placed inside the tile so positions are stable across reloads.
+  const PLANET_TILE = 2400;
+  const planets = [
+    { x:  220, y:  300, r: 30, color: [255, 200, 130], ring: false, tilt: 0 },
+    { x: 1100, y:  650, r: 50, color: [200, 150, 240], ring: true,  tilt: -0.18 },
+    { x: 1900, y: 1400, r: 24, color: [120, 200, 255], ring: false, tilt: 0 },
+    { x:  780, y: 1900, r: 38, color: [255, 180, 200], ring: false, tilt: 0 },
+    { x: 1700, y: 2150, r: 46, color: [180, 240, 200], ring: true,  tilt: 0.28 },
+    { x:  340, y: 1300, r: 22, color: [240, 220, 130], ring: false, tilt: 0 },
+    { x: 1550, y:  220, r: 34, color: [240, 140, 110], ring: false, tilt: 0 },
+  ];
 
   // 0 at ground level, 1 once the camera is well above the slope (~"space").
   function altitudeFactor() {
@@ -522,6 +579,7 @@
     const altT = altitudeFactor();
     const bc = biomeColors();
     drawSky(altT, bc);
+    if (altT > 0.30) drawPlanets(altT);
     if (altT > 0.10) drawStars(altT);
 
     // World-space layers go through the zoom transform.
@@ -569,6 +627,49 @@
           const tw = 0.75 + 0.25 * Math.sin(state.t * 2 + s.twink);
           ctx.globalAlpha = Math.min(1, t * s.bright * tw);
           ctx.fillRect(sx, sy, s.size, s.size);
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawPlanets(t) {
+    const intensity = Math.min(1, (t - 0.30) / 0.55);
+    if (intensity <= 0) return;
+    const offX = ((state.cameraX * 0.025) % PLANET_TILE + PLANET_TILE) % PLANET_TILE;
+    const offY = ((state.cameraY * 0.045) % PLANET_TILE + PLANET_TILE) % PLANET_TILE;
+    for (let dx = -PLANET_TILE; dx <= W + PLANET_TILE; dx += PLANET_TILE) {
+      for (let dy = -PLANET_TILE; dy <= H + PLANET_TILE; dy += PLANET_TILE) {
+        for (const p of planets) {
+          const sx = p.x + dx - offX;
+          const sy = p.y + dy - offY;
+          if (sx + p.r * 1.7 < -8 || sx - p.r * 1.7 > W + 8 ||
+              sy + p.r       < -8 || sy - p.r       > H + 8) continue;
+          ctx.globalAlpha = intensity * 0.92;
+          if (p.ring) {
+            ctx.strokeStyle = `rgba(${p.color[0]},${p.color[1]},${p.color[2]},0.45)`;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.ellipse(sx, sy, p.r * 1.7, p.r * 0.42, p.tilt, Math.PI, 2 * Math.PI);
+            ctx.stroke();
+          }
+          const grad = ctx.createRadialGradient(
+            sx - p.r * 0.3, sy - p.r * 0.3, p.r * 0.1, sx, sy, p.r);
+          grad.addColorStop(0,
+            `rgb(${Math.min(255, p.color[0] + 45)},${Math.min(255, p.color[1] + 45)},${Math.min(255, p.color[2] + 45)})`);
+          grad.addColorStop(1,
+            `rgb(${Math.max(0, p.color[0] - 35)},${Math.max(0, p.color[1] - 35)},${Math.max(0, p.color[2] - 35)})`);
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(sx, sy, p.r, 0, Math.PI * 2);
+          ctx.fill();
+          if (p.ring) {
+            ctx.strokeStyle = `rgba(${p.color[0]},${p.color[1]},${p.color[2]},0.7)`;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.ellipse(sx, sy, p.r * 1.7, p.r * 0.42, p.tilt, 0, Math.PI);
+            ctx.stroke();
+          }
         }
       }
     }
