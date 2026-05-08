@@ -359,6 +359,11 @@
         state.streak += 1;
         state.momentum = Math.min(1, state.momentum + 0.22);
         burst(state.x, state.y, '#06d6a0', 22);
+        // Each consecutive perfect bounces the slider higher than the last,
+        // capping at the space-launch threshold (~vy = -1500).
+        const boost = Math.min(1500, state.streak * 300);
+        state.vy = -boost;
+        state.grounded = false;
       } else if (judgement === 'good') {
         state.streak = Math.max(state.streak, 1);
         state.momentum = Math.min(1, state.momentum + 0.07);
@@ -372,12 +377,10 @@
       state.lastLanding = { x: state.x, y: state.y, judgement, t: state.t };
       showJudge(judgement.toUpperCase(), judgement);
 
-      // Every 5th consecutive perfect rockets the slider into space.
-      if (judgement === 'perfect' && state.streak > 0 && state.streak % 5 === 0) {
-        state.vy = -1500;
-        state.grounded = false;
-        burst(state.x, state.y, '#9bf6ff', 60);
-        burst(state.x, state.y, '#ffffff', 30);
+      // At cap (streak >= 5), dramatize the launch as "TO SPACE".
+      if (judgement === 'perfect' && state.streak >= 5) {
+        burst(state.x, state.y, '#9bf6ff', 40);
+        burst(state.x, state.y, '#ffffff', 20);
         showJudge('TO SPACE!', 'perfect');
       }
     }
